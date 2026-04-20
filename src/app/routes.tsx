@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from "react-router";
+import { Navigate, createHashRouter } from "react-router";
 import { HeroPage } from "./pages/HeroPage";
 import { AuthPage } from "./pages/AuthPage";
 import { ProfileSetup } from "./pages/ProfileSetup";
@@ -12,7 +12,7 @@ import { PaymentPage } from "./pages/PaymentPage";
 import { SuccessPage } from "./pages/SuccessPage";
 import { MainLayout } from "./components/MainLayout";
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   {
     path: "/",
     Component: MainLayout,
