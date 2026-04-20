@@ -13,9 +13,10 @@ import {
 } from '../lib/mobilePublicBridge';
 import { useAdminBridgeSync } from '../hooks/useAdminBridgeSync';
 
-const ACCENT_RING = 'border-[#4F46E5] ring-2 ring-[#4F46E5]/20';
+const ACCENT_RING =
+  'border-[#4F46E5] ring-2 ring-[#4F46E5]/25 bg-gradient-to-br from-white via-indigo-50/40 to-violet-50/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_28px_rgba(79,70,229,0.18)]';
 const GLASS_IDLE_CARD =
-  'border-slate-200/80 bg-white/70 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_rgba(15,23,42,0.06)] hover:border-indigo-200 hover:bg-white/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_14px_28px_rgba(79,70,229,0.12)]';
+  'border-slate-200/70 bg-white/65 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_8px_24px_rgba(15,23,42,0.08)] hover:border-indigo-200/80 hover:bg-white/80 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_16px_32px_rgba(79,70,229,0.14)]';
 
 type ServicePackage = {
   id: string;
@@ -221,11 +222,11 @@ export function BranchSelection() {
                       setVehicleId(v.id);
                       setSelectedPackageId(null);
                     }}
-                    className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 px-3 py-5 transition-all ${
+                    className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 px-3 py-5 transition-all duration-300 ${
                       selected ? `bg-white ${ACCENT_RING}` : GLASS_IDLE_CARD
                     }`}
                   >
-                    <Icon className={`w-10 h-10 ${selected ? 'text-[#4F46E5]' : 'text-slate-500'}`} strokeWidth={1.25} />
+                    <Icon className={`w-10 h-10 ${selected ? 'text-[#4F46E5] drop-shadow-[0_2px_6px_rgba(79,70,229,0.25)]' : 'text-slate-500'}`} strokeWidth={1.25} />
                     <span className="text-xs sm:text-sm font-semibold text-gray-900 tracking-wide text-center">
                       {v.label}
                     </span>
@@ -256,7 +257,7 @@ export function BranchSelection() {
                         setSelectedPackageId(pkg.id);
                       }
                     }}
-                    className={`relative flex h-full min-h-0 flex-col overflow-visible rounded-xl border-2 transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#4F46E5] focus-visible:ring-offset-2 ${
+                    className={`relative flex h-full min-h-0 flex-col overflow-visible rounded-xl border-2 transition-all duration-300 outline-none focus-visible:ring-2 focus-visible:ring-[#4F46E5] focus-visible:ring-offset-2 ${
                       isRecommended ? 'bg-gradient-to-b from-indigo-50 to-white' : 'bg-white'
                     } ${
                       selected ? ACCENT_RING : GLASS_IDLE_CARD
@@ -270,7 +271,10 @@ export function BranchSelection() {
                         </span>
                       </div>
                     ) : null}
-                    <div className={`flex h-full min-h-0 flex-1 flex-col p-4 sm:p-5 ${isRecommended ? 'pt-6 sm:pt-7' : ''}`}>
+                    <div className={`relative flex h-full min-h-0 flex-1 flex-col p-4 sm:p-5 ${isRecommended ? 'pt-6 sm:pt-7' : ''}`}>
+                      {!selected ? (
+                        <div className="pointer-events-none absolute inset-x-0 top-0 h-16 rounded-t-xl bg-gradient-to-b from-white/40 to-transparent" />
+                      ) : null}
                       <div className="flex shrink-0 items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <h3 className="text-base font-semibold leading-snug text-gray-900 sm:text-lg">
