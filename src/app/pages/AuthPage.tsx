@@ -108,6 +108,17 @@ export function AuthPage() {
                 required
                 minLength={isLogin ? 1 : 8}
               />
+              {isLogin && (
+                <div className="flex justify-end mt-1 px-0.5">
+                  <button
+                    type="button"
+                    onClick={() => alert('Please contact our support team at support@carwash.com to reset your password.')}
+                    className="text-[12px] font-medium text-gray-500 hover:text-[#4F46E5] transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
             </div>
 
             {error ? (

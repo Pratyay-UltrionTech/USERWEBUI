@@ -35,7 +35,7 @@ export function AccountSidebar({ open, onClose }: Props) {
   const doLogout = () => {
     onClose();
     signOut();
-    navigate('/', { replace: true });
+    navigate('/login', { replace: true });
   };
 
   return (

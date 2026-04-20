@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { ArrowLeft, Car, CarFront, Truck, Sparkles, Check } from 'lucide-react';
+import { ArrowLeft, Car, CarFront, Truck, Sparkles, Check, Coffee, Award } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useBooking } from '../context/BookingContext';
 import { getBranchById, getCatalogForVehicle, listVehicleTypes } from '../lib/adminPortalBridge';
@@ -14,6 +14,8 @@ import {
 import { useAdminBridgeSync } from '../hooks/useAdminBridgeSync';
 
 const ACCENT_RING = 'border-[#4F46E5] ring-2 ring-[#4F46E5]/20';
+const GLASS_IDLE_CARD =
+  'border-slate-200/80 bg-white/70 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_rgba(15,23,42,0.06)] hover:border-indigo-200 hover:bg-white/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_14px_28px_rgba(79,70,229,0.12)]';
 
 type ServicePackage = {
   id: string;
@@ -22,6 +24,9 @@ type ServicePackage = {
   /** Shown as bullet list under the service title */
   features: string[];
   recommended?: boolean;
+  freeCoffeeCount?: number;
+  eligibleForLoyaltyPoints?: boolean;
+  durationMinutes?: number;
 };
 
 export function BranchSelection() {
@@ -61,12 +66,16 @@ export function BranchSelection() {
     const cat = isMobileFlow
       ? (mobileSnapshot ? getMobileCatalogForVehicle(mobileSnapshot, vehicleId) : { services: [], addons: [] })
       : (branchId ? getCatalogForVehicle(branchId, vehicleId) : { services: [], addons: [] });
-    return cat.services.map((s, idx) => ({
+    // Only `recommended === true` from the catalog shows the badge — never infer from list order.
+    return cat.services.map((s) => ({
       id: s.id,
       name: s.name,
       price: s.price,
       features: s.descriptionPoints ?? [],
-      recommended: s.recommended === true || idx === 0,
+      recommended: s.recommended === true,
+      freeCoffeeCount: Math.max(0, Math.floor(Number(s.freeCoffeeCount ?? 0))),
+      eligibleForLoyaltyPoints: s.eligibleForLoyaltyPoints !== false,
+      durationMinutes: s.durationMinutes ?? 60,
     }));
   }, [branchId, isMobileFlow, mobileSnapshot, vehicleId, syncSeed]);
 
@@ -155,7 +164,10 @@ export function BranchSelection() {
       name: selectedPackage.name,
       price,
       features: [...selectedPackage.features],
-      recommended: Boolean(selectedPackage.recommended),
+      recommended: selectedPackage.recommended === true,
+      freeCoffeeCount: selectedPackage.freeCoffeeCount ?? 0,
+      eligibleForLoyaltyPoints: selectedPackage.eligibleForLoyaltyPoints !== false,
+      durationMinutes: selectedPackage.durationMinutes ?? 60,
     });
 
     navigate('/add-ons');
@@ -209,11 +221,11 @@ export function BranchSelection() {
                       setVehicleId(v.id);
                       setSelectedPackageId(null);
                     }}
-                    className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 px-3 py-5 transition-all bg-white ${
-                      selected ? ACCENT_RING : 'border-gray-200 hover:border-gray-300'
+                    className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 px-3 py-5 transition-all ${
+                      selected ? `bg-white ${ACCENT_RING}` : GLASS_IDLE_CARD
                     }`}
                   >
-                    <Icon className={`w-10 h-10 ${selected ? 'text-[#4F46E5]' : 'text-gray-600'}`} strokeWidth={1.25} />
+                    <Icon className={`w-10 h-10 ${selected ? 'text-[#4F46E5]' : 'text-slate-500'}`} strokeWidth={1.25} />
                     <span className="text-xs sm:text-sm font-semibold text-gray-900 tracking-wide text-center">
                       {v.label}
                     </span>
@@ -229,7 +241,7 @@ export function BranchSelection() {
               {PACKAGES.map((pkg) => {
                 const selected = selectedPackageId === pkg.id;
                   const displayPrice = `$${pkg.price}`;
-                const isRecommended = Boolean(pkg.recommended);
+                const isRecommended = pkg.recommended === true;
                 return (
                   <div
                     key={pkg.id}
@@ -247,7 +259,7 @@ export function BranchSelection() {
                     className={`relative flex h-full min-h-0 flex-col overflow-visible rounded-xl border-2 transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#4F46E5] focus-visible:ring-offset-2 ${
                       isRecommended ? 'bg-gradient-to-b from-indigo-50 to-white' : 'bg-white'
                     } ${
-                      selected ? ACCENT_RING : 'border-gray-200 hover:border-gray-300'
+                      selected ? ACCENT_RING : GLASS_IDLE_CARD
                     } cursor-pointer shadow-sm`}
                   >
                     {isRecommended ? (
@@ -269,9 +281,27 @@ export function BranchSelection() {
                           {displayPrice}
                         </span>
                       </div>
+                      {(pkg.freeCoffeeCount ?? 0) > 0 || pkg.eligibleForLoyaltyPoints ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {(pkg.freeCoffeeCount ?? 0) > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-200/70 sm:text-xs">
+                              <Coffee className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              {(pkg.freeCoffeeCount ?? 0) === 1
+                                ? 'Includes 1 complimentary coffee'
+                                : `Includes ${pkg.freeCoffeeCount} complimentary coffees`}
+                            </span>
+                          ) : null}
+                          {pkg.eligibleForLoyaltyPoints ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-900 ring-1 ring-indigo-200/70 sm:text-xs">
+                              <Award className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              Price counts toward loyalty
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <ul className="mt-3 flex-1 space-y-1.5 border-t border-gray-200/80 pt-3 text-sm text-gray-600">
-                        {pkg.features.map((line) => (
-                          <li key={line} className="flex gap-2">
+                        {pkg.features.map((line, li) => (
+                          <li key={`${pkg.id}-${li}`} className="flex gap-2">
                             <Check
                               className="mt-0.5 h-4 w-4 shrink-0 text-[#4F46E5]"
                               strokeWidth={2.5}

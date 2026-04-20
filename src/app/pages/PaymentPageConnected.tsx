@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { useBooking } from '../context/BookingContext';
 import {
@@ -23,7 +24,6 @@ export function PaymentPageConnected() {
     selectedAddOns,
     selectedDate,
     selectedTime,
-    selectedEndTime,
     vehicleType,
     getTotalPrice,
     setConfirmedBooking,
@@ -55,7 +55,7 @@ export function PaymentPageConnected() {
   const total = beforeTax + tax;
 
   const confirm = async () => {
-    if (!selectedBranch || !selectedService || !selectedDate || !selectedTime || !selectedEndTime || !vehicleType) return;
+    if (!selectedBranch || !selectedService || !selectedDate || !selectedTime || !vehicleType) return;
     setSubmitting(true);
     const write = await createOnlineBooking({
       branchId: selectedBranch.id,
@@ -65,9 +65,9 @@ export function PaymentPageConnected() {
       vehicleType,
       serviceSummary: `${selectedService.name}${selectedAddOns.length ? ` + ${selectedAddOns.map((a) => a.name).join(', ')}` : ''}`,
       serviceId: selectedService.id,
+      selectedAddonIds: selectedAddOns.map((a) => a.id),
       slotDate: dateISO,
       startTime: selectedTime,
-      endTime: selectedEndTime,
       tipCents: 0,
     });
     if (!write.ok) {
@@ -77,20 +77,22 @@ export function PaymentPageConnected() {
       return;
     }
     const b = write.booking;
-    setConfirmedBooking({
-      id: b.id,
-      branchId: selectedBranch.id,
-      status: b.status ?? 'scheduled',
-      tipCents: typeof b.tip_cents === 'number' ? b.tip_cents : 0,
-      subtotal,
-      tax,
-      discounts: scheduleDiscount + promoDiscount,
-      total,
-      createdAt: new Date().toISOString(),
-      freeCoffeeCount: getFreeCoffeeCupsForLineItem(selectedBranch.id, vehicleType, selectedService.id),
+    flushSync(() => {
+      setConfirmedBooking({
+        id: b.id,
+        branchId: selectedBranch.id,
+        status: b.status ?? 'scheduled',
+        tipCents: typeof b.tip_cents === 'number' ? b.tip_cents : 0,
+        subtotal,
+        tax,
+        discounts: scheduleDiscount + promoDiscount,
+        total,
+        createdAt: new Date().toISOString(),
+        freeCoffeeCount: getFreeCoffeeCupsForLineItem(selectedBranch.id, vehicleType, selectedService.id),
+      });
     });
     setSubmitting(false);
-    navigate('/success');
+    navigate('/success', { replace: true });
   };
 
   return (

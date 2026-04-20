@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router';
 import {
   ArrowLeft,
@@ -24,6 +25,7 @@ import {
 import {
   createMobileOnlineBooking,
   getCachedMobileSnapshot,
+  getMobileFreeCoffeeCupsForLineItem,
   listApplicableMobileDiscounts,
   listMobilePromoCodes,
 } from '../lib/mobilePublicBridge';
@@ -84,6 +86,7 @@ export function PaymentPage() {
   const [selectedScheduleOfferIds, setSelectedScheduleOfferIds] = useState<string[]>([]);
   /** Optional tip in cents (shown to washer / branch; not taxed in this summary). */
   const [tipCents, setTipCents] = useState(0);
+  const [tipInput, setTipInput] = useState('');
   const syncSeed = useAdminBridgeSync(30000);
   const mobileSnapshot = getCachedMobileSnapshot();
 
@@ -199,11 +202,10 @@ export function PaymentPage() {
   };
 
   const handleConfirm = async () => {
-    if (!selectedMethod || !selectedBranch || !selectedService || !selectedDate || !selectedTime || !selectedEndTime || !vehicleType) return;
+    if (!selectedMethod || !selectedBranch || !selectedService || !selectedDate || !selectedTime || !vehicleType) return;
     if (profileIncomplete) return;
 
     setIsProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 400));
     const customerName =
       isAuthenticated && session
         ? session.fullName?.trim() || session.email
@@ -230,7 +232,7 @@ export function PaymentPage() {
             selectedAddonIds: selectedAddOns.map((a) => a.id),
             slotDate: dateISO,
             startTime: selectedTime,
-            endTime: selectedEndTime,
+            endTime: selectedEndTime ?? undefined,
             notes: `${selectedService.name}${selectedAddOns.length ? ` + ${selectedAddOns.map((a) => a.name).join(', ')}` : ''}`,
             tipCents,
           })
@@ -242,9 +244,10 @@ export function PaymentPage() {
             vehicleType,
             serviceSummary: `${selectedService.name}${selectedAddOns.length ? ` + ${selectedAddOns.map((a) => a.name).join(', ')}` : ''}`,
             serviceId: selectedService.id,
+            selectedAddonIds: selectedAddOns.map((a) => a.id),
             slotDate: dateISO,
             startTime: selectedTime,
-            endTime: selectedEndTime,
+            endTime: selectedEndTime ?? undefined,
             tipCents,
           });
     if (!write.ok) {
@@ -252,24 +255,33 @@ export function PaymentPage() {
       navigate('/datetime');
       return;
     }
+    
+    // Save guest/user session info for a personalized home experience
+    try {
+      localStorage.setItem('carwash_last_customer_name', customerName);
+      localStorage.setItem('carwash_last_customer_phone', phoneVal);
+    } catch { /* ignore */ }
+
     const b = write.booking;
-    setConfirmedBooking({
-      id: b.id,
-      branchId: serviceType === 'onsite' ? undefined : selectedBranch.id,
-      status: b.status ?? 'scheduled',
-      tipCents: typeof b.tip_cents === 'number' ? b.tip_cents : tipCents,
-      subtotal,
-      tax,
-      discounts: scheduleDiscountAmount + promoDiscountAmount,
-      total: finalTotal,
-      createdAt: new Date().toISOString(),
-      freeCoffeeCount:
-        serviceType === 'onsite'
-          ? 0
-          : getFreeCoffeeCupsForLineItem(selectedBranch.id, vehicleType, selectedService.id),
+    flushSync(() => {
+      setConfirmedBooking({
+        id: b.id,
+        branchId: serviceType === 'onsite' ? undefined : selectedBranch.id,
+        status: b.status ?? 'scheduled',
+        tipCents: typeof b.tip_cents === 'number' ? b.tip_cents : tipCents,
+        subtotal,
+        tax,
+        discounts: scheduleDiscountAmount + promoDiscountAmount,
+        total: finalTotal,
+        createdAt: new Date().toISOString(),
+        freeCoffeeCount:
+          serviceType === 'onsite'
+            ? getMobileFreeCoffeeCupsForLineItem(mobileSnapshot, vehicleType, selectedService.id)
+            : getFreeCoffeeCupsForLineItem(selectedBranch.id, vehicleType, selectedService.id),
+      });
     });
     setIsProcessing(false);
-    navigate('/success');
+    navigate('/success', { replace: true });
   };
 
   const profileIncomplete =
@@ -963,15 +975,19 @@ export function PaymentPage() {
             <div className="flex flex-wrap gap-2 mb-4">
               {[
                 { label: 'No tip', cents: 0 },
-                { label: '$2', cents: 200 },
                 { label: '$5', cents: 500 },
                 { label: '$10', cents: 1000 },
+                { label: '$15', cents: 1500 },
                 { label: '$20', cents: 2000 },
+                { label: '$25', cents: 2500 },
               ].map((opt) => (
                 <button
                   key={opt.label}
                   type="button"
-                  onClick={() => setTipCents(opt.cents)}
+                  onClick={() => {
+                    setTipCents(opt.cents);
+                    setTipInput(opt.cents === 0 ? '' : (opt.cents / 100).toString());
+                  }}
                   className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                     tipCents === opt.cents
                       ? 'border-[#4F46E5] bg-indigo-50 text-[#4F46E5]'
@@ -984,15 +1000,17 @@ export function PaymentPage() {
             </div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Custom tip ($)</label>
             <input
-              type="number"
-              min={0}
-              max={500}
-              step={1}
-              value={tipCents === 0 ? '' : (tipCents / 100).toFixed(2)}
-              placeholder="0"
+              type="text"
+              inputMode="decimal"
+              value={tipInput}
+              placeholder="0.00"
               onChange={(e) => {
                 const v = e.target.value;
-                if (v === '') {
+                // Allow only numbers and one decimal point
+                if (v !== '' && !/^\d*\.?\d*$/.test(v)) return;
+                
+                setTipInput(v);
+                if (v === '' || v === '.') {
                   setTipCents(0);
                   return;
                 }

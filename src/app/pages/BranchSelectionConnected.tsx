@@ -27,7 +27,10 @@ export function BranchSelectionConnected() {
       name: service.name,
       price: service.price,
       features: service.descriptionPoints ?? [],
-      recommended: false,
+      recommended: service.recommended === true,
+      freeCoffeeCount: Math.max(0, Math.floor(Number(service.freeCoffeeCount ?? 0))),
+      eligibleForLoyaltyPoints: service.eligibleForLoyaltyPoints !== false,
+      durationMinutes: service.durationMinutes ?? 60,
     });
     navigate('/addons');
   };

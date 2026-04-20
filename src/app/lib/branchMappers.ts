@@ -1,4 +1,5 @@
 import type { AddonItem, ServiceItem, UserBranch } from './branchCatalogTypes';
+import { normalizeCatalogServiceItem } from './catalogServiceNormalize';
 
 export function mapBranch(raw: any): UserBranch {
   return {
@@ -13,17 +14,7 @@ export function mapBranch(raw: any): UserBranch {
 }
 
 export function mapService(raw: any): ServiceItem {
-  return {
-    id: String(raw.id ?? ''),
-    name: String(raw.name ?? ''),
-    price: Number(raw.price ?? 0),
-    freeCoffeeCount: Number(raw.free_coffee_count ?? raw.freeCoffeeCount ?? 0),
-    recommended: raw.recommended === true,
-    descriptionPoints: Array.isArray(raw.description_points ?? raw.descriptionPoints)
-      ? (raw.description_points ?? raw.descriptionPoints)
-      : [],
-    active: raw.active !== false,
-  };
+  return normalizeCatalogServiceItem(raw);
 }
 
 export function mapAddon(raw: any): AddonItem {

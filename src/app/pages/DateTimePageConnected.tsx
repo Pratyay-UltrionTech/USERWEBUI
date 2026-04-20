@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { useBooking } from '../context/BookingContext';
-import { listAvailableSlots } from '../lib/adminPortalBridge';
+import { estimateBranchBookingMinutes, listAvailableSlots } from '../lib/adminPortalBridge';
 
 function isoDate(d: Date): string {
   const y = d.getFullYear();
@@ -12,7 +13,12 @@ function isoDate(d: Date): string {
 
 export function DateTimePageConnected() {
   const navigate = useNavigate();
-  const { selectedBranch, setSelectedDate, setSelectedTime, setSelectedEndTime } = useBooking();
+  const { selectedBranch, selectedService, selectedAddOns, setSelectedDate, setSelectedTime, setSelectedEndTime } =
+    useBooking();
+  const bookingDurationMinutes = useMemo(
+    () => estimateBranchBookingMinutes(selectedService, selectedAddOns.length),
+    [selectedService, selectedAddOns]
+  );
   const [date, setDate] = useState<Date>(new Date());
   const [slotKey, setSlotKey] = useState('');
   const [slots, setSlots] = useState<Array<{ startTime: string; endTime: string; label: string; capacity: number; available: number }>>([]);
@@ -25,7 +31,7 @@ export function DateTimePageConnected() {
         return;
       }
       try {
-        const next = await listAvailableSlots(selectedBranch.id, dateISO);
+        const next = await listAvailableSlots(selectedBranch.id, dateISO, bookingDurationMinutes);
         if (mounted) setSlots(next);
       } catch {
         if (mounted) setSlots([]);
@@ -35,14 +41,16 @@ export function DateTimePageConnected() {
     return () => {
       mounted = false;
     };
-  }, [selectedBranch, dateISO]);
+  }, [selectedBranch, dateISO, bookingDurationMinutes]);
 
   const continueNext = () => {
     const picked = slots.find((s) => `${s.startTime}|${s.endTime}` === slotKey);
     if (!picked) return;
-    setSelectedDate(date);
-    setSelectedTime(picked.startTime);
-    setSelectedEndTime(picked.endTime);
+    flushSync(() => {
+      setSelectedDate(date);
+      setSelectedTime(picked.startTime);
+      setSelectedEndTime(picked.endTime);
+    });
     navigate('/summary');
   };
 

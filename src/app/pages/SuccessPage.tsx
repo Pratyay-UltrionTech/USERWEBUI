@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { CheckCircle, Calendar, Clock, MapPin, Car, Download, Share2, Coffee, Receipt, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -9,7 +9,12 @@ import {
   getFreeCoffeeCupsForLineItem,
   type PublicBookingRow,
 } from '../lib/adminPortalBridge';
-import { fetchMobileBookingById, type MobileBookingRow } from '../lib/mobilePublicBridge';
+import {
+  fetchMobileBookingById,
+  getCachedMobileSnapshot,
+  getMobileFreeCoffeeCupsForLineItem,
+  type MobileBookingRow,
+} from '../lib/mobilePublicBridge';
 
 function formatJobStatus(status: string): string {
   const s = (status || 'scheduled').replace(/_/g, ' ');
@@ -64,6 +69,9 @@ export function SuccessPage() {
       return Math.max(0, Math.floor(confirmedBooking.freeCoffeeCount));
     }
     if (!selectedBranch?.id || !vehicleType || !selectedService?.id) return 0;
+    if (selectedBranch.id.startsWith('mobile-')) {
+      return getMobileFreeCoffeeCupsForLineItem(getCachedMobileSnapshot(), vehicleType, selectedService.id);
+    }
     return getFreeCoffeeCupsForLineItem(selectedBranch.id, vehicleType, selectedService.id);
   }, [
     confirmedBooking?.freeCoffeeCount,
@@ -110,18 +118,56 @@ export function SuccessPage() {
     console.log('Track booking:', booking.id);
   };
 
-  const handleNewBooking = () => {
+  const goHome = () => {
     navigate('/home');
   };
 
+  /**
+   * Browser Back from confirmation should not return into payment/checkout.
+   * Capture phase runs before React Router applies the pop so we can replace with /home.
+   */
+  useEffect(() => {
+    const onPopState = () => {
+      navigate('/home', { replace: true });
+    };
+    window.addEventListener('popstate', onPopState, true);
+    return () => window.removeEventListener('popstate', onPopState, true);
+  }, [navigate]);
+
+  const receiptKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      goHome();
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4 relative overflow-x-hidden">
+      <div className="absolute top-6 left-6 z-20">
+        <button
+          type="button"
+          onClick={goHome}
+          className="flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-white hover:shadow-md transition-all group"
+        >
+          <MapPin className="w-4 h-4 text-[#4F46E5] group-hover:scale-110 transition-transform" />
+          Go to Home
+        </button>
+      </div>
+
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-2xl"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-2xl py-12"
       >
         <div className="bg-white rounded-2xl shadow-xl p-8 md:p-12">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={goHome}
+            onKeyDown={receiptKeyDown}
+            className="cursor-pointer rounded-xl outline-none transition-colors hover:bg-slate-50/60 focus-visible:ring-2 focus-visible:ring-[#4F46E5] focus-visible:ring-offset-2 -m-2 p-2 sm:-m-3 sm:p-3"
+            aria-label="Return to home — tap this booking receipt"
+          >
           {/* Success Icon */}
           <motion.div
             initial={{ scale: 0 }}
@@ -147,7 +193,7 @@ export function SuccessPage() {
           {/* Booking ID */}
           <div className="bg-gray-50 rounded-xl p-4 mb-8 text-center">
             <p className="text-sm text-gray-600 mb-1">Booking ID</p>
-            <p className="text-xl font-semibold text-gray-900">{booking.id}</p>
+            <p className="text-xl font-semibold text-gray-900 break-all">{booking.id}</p>
           </div>
 
           {/* Booking Details */}
@@ -200,7 +246,7 @@ export function SuccessPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-gradient-to-b from-gray-50/90 to-white px-6 py-6 text-center shadow-sm">
+            <div className="w-full rounded-2xl border border-gray-200 bg-gradient-to-b from-gray-50/90 to-white px-6 py-6 text-center shadow-sm">
               <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[#4F46E5]/10">
                 <Receipt className="h-5 w-5 text-[#4F46E5]" aria-hidden />
               </div>
@@ -237,9 +283,23 @@ export function SuccessPage() {
             )}
           </div>
 
+          <p className="mb-6 text-center text-sm font-medium text-[#4F46E5]">
+            Tap anywhere on this receipt to return home
+          </p>
+
+          {/* Info Box */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-2">
+            <p className="text-sm text-blue-900">
+              <span className="font-medium">📧 Confirmation Sent:</span> We've sent
+              booking details to your email and phone number.
+            </p>
+          </div>
+          </div>
+
           {/* Action Buttons */}
-          <div className="space-y-3 mb-6">
+          <div className="space-y-3 mb-6 mt-6">
             <button
+              type="button"
               onClick={handleTrackBooking}
               className="w-full bg-[#4F46E5] text-white py-4 rounded-xl font-medium hover:bg-[#4338CA] transition-colors shadow-sm"
             >
@@ -247,6 +307,7 @@ export function SuccessPage() {
             </button>
             <div className="grid grid-cols-2 gap-3">
               <button
+                type="button"
                 onClick={() => console.log('Download receipt')}
                 className="flex items-center justify-center gap-2 py-3 border-2 border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
@@ -254,6 +315,7 @@ export function SuccessPage() {
                 Receipt
               </button>
               <button
+                type="button"
                 onClick={() => console.log('Share booking')}
                 className="flex items-center justify-center gap-2 py-3 border-2 border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
@@ -263,18 +325,11 @@ export function SuccessPage() {
             </div>
           </div>
 
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-            <p className="text-sm text-blue-900">
-              <span className="font-medium">📧 Confirmation Sent:</span> We've sent
-              booking details to your email and phone number.
-            </p>
-          </div>
-
-          {/* New Booking Button */}
+          {/* New Booking shortcut */}
           <button
-            onClick={handleNewBooking}
-            className="w-full text-gray-600 py-3 rounded-xl font-medium hover:bg-gray-100 transition-colors"
+            type="button"
+            onClick={goHome}
+            className="w-full text-gray-500 py-3 rounded-xl text-sm font-medium hover:bg-gray-100 transition-colors"
           >
             Book Another Service
           </button>

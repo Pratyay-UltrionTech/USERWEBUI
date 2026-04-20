@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router';
 import { ArrowLeft, Building2, Car } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
+import { useBooking } from '../context/BookingContext';
 import { apiCustomerServiceHistory, type CustomerServiceHistoryItem } from '../lib/userApi';
+import { getCatalogForVehicle, listBranches } from '../lib/adminPortalBridge';
 
 function statusBadgeClass(status: string) {
   const s = status.toLowerCase();
@@ -16,13 +18,98 @@ function statusBadgeClass(status: string) {
 export function ServiceHistoryPage() {
   const navigate = useNavigate();
   const { hasCustomerSession, session } = useAuth();
+  const {
+    setSelectedBranch,
+    setServiceType,
+    setVehicleType,
+    setSelectedService,
+    setSelectedAddOns,
+    setReschedulingBookingId,
+    setOriginalSlot,
+    resetBooking
+  } = useBooking();
   const [items, setItems] = useState<CustomerServiceHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const handleReschedule = (row: CustomerServiceHistoryItem) => {
+    // 1. Reset current booking state
+    resetBooking();
+
+    // 2. Determine channel and core metadata
+    const isMobile = row.channel === 'mobile';
+    setServiceType(isMobile ? 'onsite' : 'branch');
+    const vType = row.vehicle_type || 'SUV';
+    setVehicleType(vType);
+
+    // 3. Find and set the branch
+    let bid = row.branch_id || '';
+    if (!bid && !isMobile && row.location_label) {
+      const branches = listBranches('');
+      const found = branches.find(b => b.name === row.location_label || b.location === row.location_label);
+      if (found) bid = found.id;
+    }
+
+    if (isMobile) {
+      setSelectedBranch({
+        id: bid || 'mobile',
+        name: 'Mobile Service',
+        location: row.location_label,
+        rating: 4.9,
+        image: ''
+      });
+    } else if (bid) {
+      const branch = listBranches('').find(b => b.id === bid);
+      if (branch) {
+        setSelectedBranch({
+          id: branch.id,
+          name: branch.name,
+          location: branch.location,
+          rating: 4.8,
+          image: ''
+        });
+      }
+    }
+
+    // 4. Initialize service and add-ons from catalog snapshot
+    if (bid && row.service_id) {
+      const { services, addons } = getCatalogForVehicle(bid, vType);
+      const svc = services.find(s => s.id === row.service_id);
+      if (svc) {
+        setSelectedService({
+          id: svc.id,
+          name: svc.name,
+          price: svc.price,
+          features: svc.descriptionPoints,
+          durationMinutes: svc.durationMinutes,
+          freeCoffeeCount: svc.freeCoffeeCount,
+          eligibleForLoyaltyPoints: svc.eligibleForLoyaltyPoints,
+          recommended: svc.recommended
+        });
+      }
+
+      if (row.selected_addon_ids?.length) {
+        const picked = addons.filter(a => row.selected_addon_ids!.includes(a.id));
+        setSelectedAddOns(picked.map(a => ({ id: a.id, name: a.name, price: a.price })));
+      }
+    }
+
+    // 5. Mark rescheduling mode
+    setReschedulingBookingId(row.id);
+    setOriginalSlot({
+      date: row.slot_date,
+      startTime: row.startTime || row.start_time,
+      endTime: row.endTime || row.end_time
+    });
+
+    // 6. Navigate
+    navigate('/datetime');
+  };
+
+
   useEffect(() => {
     if (!hasCustomerSession || !session?.accessToken) {
-      navigate('/', { replace: true });
+      navigate('/login', { replace: true });
       return;
     }
     let cancelled = false;
@@ -94,9 +181,8 @@ export function ServiceHistoryPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 flex-1 items-start gap-2">
                     <span
-                      className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                        row.channel === 'mobile' ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-[#4F46E5]'
-                      }`}
+                      className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${row.channel === 'mobile' ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-[#4F46E5]'
+                        }`}
                     >
                       {row.channel === 'mobile' ? <Car className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
                     </span>
@@ -120,6 +206,20 @@ export function ServiceHistoryPage() {
                     {row.status.replace(/_/g, ' ')}
                   </span>
                 </div>
+                {row.status === 'scheduled' && (
+                  <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReschedule(row);
+                      }}
+                      className="rounded-lg px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 border border-indigo-100 transition-colors"
+                    >
+                      Reschedule
+                    </button>
+                  </div>
+                )}
               </motion.li>
             ))}
           </ul>

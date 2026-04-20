@@ -31,6 +31,10 @@ export interface SlotOption {
   capacity: number;
   booked: number;
   available: number;
+  /** Bays open by schedule (ignores existing bookings). 0 means window closed / not bookable. */
+  scheduleOpenBays?: number;
+  durationMinutes?: number;
+  slotsNeeded?: number;
 }
 
 export interface CatalogForVehicle {
@@ -71,11 +75,23 @@ export interface BookingWriteInput {
   serviceSummary: string;
   /** Catalog service id — required for loyalty tracking on branch bookings. */
   serviceId?: string;
+  selectedAddonIds?: string[];
   slotDate: string;
   startTime: string;
-  endTime: string;
+  /** Omit to let the API compute from service duration + add-ons. */
+  endTime?: string;
   /** Optional gratuity in cents (stored on booking; max $500 server-side). */
   tipCents?: number;
+}
+
+export function estimateBranchBookingMinutes(
+  service: Pick<ServiceItem, 'durationMinutes'> | null | undefined,
+  addonCount: number
+): number {
+  let base = Math.max(30, Math.round(Number(service?.durationMinutes ?? 60) || 60));
+  if (base % 30) base += 30 - (base % 30);
+  base = Math.min(480, base);
+  return base + Math.max(0, addonCount) * 30;
 }
 
 /** Shape returned by POST/GET public booking endpoints. */
@@ -261,18 +277,112 @@ function getOpenBaysForSlot(
   return bays.filter(Boolean).length;
 }
 
-export async function listAvailableSlots(branchId: string, dateISO: string): Promise<SlotOption[]> {
-  const rows = await fetchPublicJson<any[]>(
-    `/public/branches/${branchId}/slots?date=${encodeURIComponent(dateISO)}`
-  );
-  return rows.map((s) => ({
+const SLOT_GRID_MINUTES = 30;
+
+/** Longest continuous span inside branch hours (minutes). Used so slot listing never asks the API for an impossible duration. */
+export function maxOperatingSpanMinutes(branch: Pick<UserBranch, 'openTime' | 'closeTime'>): number {
+  const open = parseTimeToMinutes(branch.openTime);
+  let close = parseTimeToMinutes(branch.closeTime);
+  if (close <= open) close += 24 * 60;
+  return Math.max(SLOT_GRID_MINUTES, close - open);
+}
+
+function snapDurationToSlotGridMinutes(minutes: number): number {
+  const m = Math.max(SLOT_GRID_MINUTES, Math.round(Number(minutes) || 0));
+  const rem = m % SLOT_GRID_MINUTES;
+  return rem ? m + SLOT_GRID_MINUTES - rem : m;
+}
+
+/**
+ * Offline slot list when the public slots API fails (uses last synced catalog).
+ * Same 30-minute start grid and duration snapping as the server.
+ */
+export function listAvailableSlotsFromCache(
+  branchId: string,
+  dateISO: string,
+  bookingDurationMinutes?: number
+): SlotOption[] {
+  const branch = getBranchById(branchId);
+  const data = getBranchData(branchId);
+  if (!branch || !data) return [];
+  const raw =
+    bookingDurationMinutes != null && Number.isFinite(bookingDurationMinutes)
+      ? Math.round(Number(bookingDurationMinutes))
+      : SLOT_GRID_MINUTES;
+  const snapped = snapDurationToSlotGridMinutes(raw);
+  const maxSpan = maxOperatingSpanMinutes(branch);
+  const dur = Math.min(snapped, maxSpan);
+  const open = parseTimeToMinutes(branch.openTime);
+  let close = parseTimeToMinutes(branch.closeTime);
+  if (close <= open) close += 24 * 60;
+  const baysN = Math.max(1, branch.bayCount);
+  const out: SlotOption[] = [];
+  for (let t = open; t + dur <= close; t += SLOT_GRID_MINUTES) {
+    const st = formatMinutesToHHMM(t);
+    const et = formatMinutesToHHMM(t + dur);
+    const openBays = getOpenBaysForSlot(data, dateISO, st, et, baysN);
+    out.push({
+      startTime: st,
+      endTime: et,
+      label: `${format12h(st)} – ${format12h(et)} (${dur} min)`,
+      capacity: baysN,
+      booked: Math.max(0, baysN - openBays),
+      available: openBays,
+      scheduleOpenBays: openBays,
+      durationMinutes: dur,
+    });
+  }
+  return out;
+}
+
+export async function listAvailableSlots(
+  branchId: string,
+  dateISO: string,
+  bookingDurationMinutes?: number,
+  opts?: { signal?: AbortSignal }
+): Promise<SlotOption[]> {
+  const raw =
+    bookingDurationMinutes != null && Number.isFinite(bookingDurationMinutes)
+      ? Math.round(Number(bookingDurationMinutes))
+      : undefined;
+  const branch = getBranchById(branchId);
+  const capped =
+    raw != null && branch != null ? Math.min(raw, maxOperatingSpanMinutes(branch)) : raw;
+
+  const durQ =
+    capped != null && Number.isFinite(capped)
+      ? `&duration_minutes=${encodeURIComponent(String(capped))}`
+      : '';
+
+  const mapRow = (s: any): SlotOption => ({
     startTime: String(s.startTime ?? s.start_time ?? ''),
     endTime: String(s.endTime ?? s.end_time ?? ''),
     label: String(s.label ?? ''),
     capacity: Number(s.capacity ?? 0),
     booked: Number(s.booked ?? 0),
     available: Number(s.available ?? 0),
-  }));
+    scheduleOpenBays:
+      s.scheduleOpenBays != null
+        ? Number(s.scheduleOpenBays)
+        : s.schedule_open_bays != null
+          ? Number(s.schedule_open_bays)
+          : undefined,
+    durationMinutes: s.durationMinutes != null ? Number(s.durationMinutes) : undefined,
+    slotsNeeded: s.slotsNeeded != null ? Number(s.slotsNeeded) : undefined,
+  });
+
+  try {
+    const rows = await fetchPublicJson<any[]>(
+      `/public/branches/${branchId}/slots?date=${encodeURIComponent(dateISO)}${durQ}`,
+      opts?.signal ? { signal: opts.signal } : undefined
+    );
+    if (!Array.isArray(rows)) return [];
+    return rows.map(mapRow);
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    if (e instanceof Error && e.name === 'AbortError') throw e;
+    return listAvailableSlotsFromCache(branchId, dateISO, capped ?? raw);
+  }
 }
 
 function inDateRange(dateISO: string, start?: string, end?: string): boolean {
@@ -393,20 +503,22 @@ export async function createOnlineBooking(
 ): Promise<{ ok: true; booking: PublicBookingRow } | { ok: false }> {
   try {
     const tip = Math.min(50_000, Math.max(0, Math.floor(Number(input.tipCents ?? 0))));
+    const body: Record<string, unknown> = {
+      customer_name: input.customerName,
+      phone: input.phone,
+      address: input.address,
+      vehicle_type: input.vehicleType,
+      service_summary: input.serviceSummary,
+      service_id: input.serviceId ?? null,
+      selected_addon_ids: input.selectedAddonIds ?? [],
+      slot_date: input.slotDate,
+      start_time: input.startTime,
+      tip_cents: tip,
+    };
+    if (input.endTime) body.end_time = input.endTime;
     const out = await fetchPublicJson<PublicBookingRow>(`/public/branches/${input.branchId}/bookings`, {
       method: 'POST',
-      body: JSON.stringify({
-        customer_name: input.customerName,
-        phone: input.phone,
-        address: input.address,
-        vehicle_type: input.vehicleType,
-        service_summary: input.serviceSummary,
-        service_id: input.serviceId ?? null,
-        slot_date: input.slotDate,
-        start_time: input.startTime,
-        end_time: input.endTime,
-        tip_cents: tip,
-      }),
+      body: JSON.stringify(body),
     });
     void hydratePublicCatalogFromApi();
     return { ok: true, booking: out };

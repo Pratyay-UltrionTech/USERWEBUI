@@ -16,7 +16,7 @@ const FALLBACK_IMAGE =
 export function HomePage() {
   const navigate = useNavigate();
   const { hasCustomerSession, session } = useAuth();
-  const { resetBooking, setSelectedBranch, setServiceType } = useBooking();
+  const { resetBooking, setSelectedBranch, setServiceType, confirmedBooking } = useBooking();
   const [activeTab, setActiveTab] = useState<'branch' | 'mobile'>('branch');
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileLocation, setMobileLocation] = useState('');
@@ -319,11 +319,11 @@ export function HomePage() {
               </div>
             ) : null}
 
-            {!hasCustomerSession ? (
+            {!hasCustomerSession && !confirmedBooking ? (
               <>
                 <button
                   type="button"
-                  onClick={() => navigate('/?signup=1')}
+                  onClick={() => navigate('/login?signup=1')}
                   className="flex items-center justify-center gap-2 px-3 py-2 sm:px-4 bg-[#4F46E5] text-white hover:bg-[#4338CA] rounded-lg transition-colors shadow-sm"
                 >
                   <UserPlus className="w-4 h-4 shrink-0" />
@@ -331,7 +331,7 @@ export function HomePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/')}
+                  onClick={() => navigate('/login')}
                   className="flex items-center justify-center gap-2 px-3 py-2 sm:px-4 text-gray-700 hover:text-[#4F46E5] hover:bg-gray-50 rounded-lg transition-colors"
                 >
                   <LogIn className="w-4 h-4 shrink-0" />
@@ -587,10 +587,11 @@ export function HomePage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 + index * 0.1 }}
+                    className="h-full"
                   >
                     <button
                       onClick={() => handleBranchSelect(branch.id)}
-                      className="w-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all group"
+                      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all group hover:shadow-md"
                     >
                       <div className="aspect-video overflow-hidden">
                         <img
@@ -599,13 +600,13 @@ export function HomePage() {
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                       </div>
-                      <div className="p-4">
+                      <div className="flex flex-1 flex-col p-4">
                         <h4 className="font-semibold text-gray-900 mb-2 text-left">
                           {branch.name}
                         </h4>
-                        <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                        <div className="mb-2 flex min-h-10 items-start gap-2 text-sm text-gray-500">
                           <MapPin className="w-4 h-4" />
-                          <span>{branch.location}</span>
+                          <span className="line-clamp-2 text-left">{branch.location}</span>
                         </div>
                         <div className="flex items-center gap-1 mb-3">
                           <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
@@ -617,7 +618,7 @@ export function HomePage() {
 
                         {/* Promotions Tags */}
                         {branch.promotions.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="mt-auto flex flex-wrap gap-1">
                             {branch.promotions.slice(0, 2).map((promo) => (
                               <span
                                 key={promo}

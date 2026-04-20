@@ -1,4 +1,5 @@
 import { Navigate, createBrowserRouter } from "react-router";
+import { HeroPage } from "./pages/HeroPage";
 import { AuthPage } from "./pages/AuthPage";
 import { ProfileSetup } from "./pages/ProfileSetup";
 import { ServiceHistoryPage } from "./pages/ServiceHistoryPage";
@@ -16,7 +17,8 @@ export const router = createBrowserRouter([
     path: "/",
     Component: MainLayout,
     children: [
-      { index: true, Component: AuthPage },
+      { index: true, Component: HeroPage },
+      { path: "login", Component: AuthPage },
       { path: "profile-setup", Component: ProfileSetup },
       { path: "service-history", Component: ServiceHistoryPage },
       { path: "home", Component: HomePage },

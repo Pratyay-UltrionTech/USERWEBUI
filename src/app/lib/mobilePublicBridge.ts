@@ -1,4 +1,6 @@
 import { fetchPublicJson } from './userPublicApi';
+import type { AddonItem, ServiceItem } from './branchCatalogTypes';
+import { mapService } from './branchMappers';
 
 const MOBILE_SNAPSHOT_KEY = 'carwash_user_mobile_snapshot_v1';
 
@@ -6,6 +8,8 @@ type MobileServiceItem = {
   id: string;
   name: string;
   price: number;
+  free_coffee_count?: number;
+  eligible_for_loyalty_points?: boolean;
   recommended?: boolean;
   description_points?: string[];
   active?: boolean;
@@ -174,9 +178,12 @@ export function listMobileVehicleTypes(snapshot: MobileSnapshot): string[] {
   return snapshot.vehicle_blocks.map((b) => b.vehicle_type).filter(Boolean);
 }
 
-export function getMobileCatalogForVehicle(snapshot: MobileSnapshot, vehicleType: string): {
-  services: Array<{ id: string; name: string; price: number; recommended: boolean; descriptionPoints: string[] }>;
-  addons: Array<{ id: string; name: string; price: number; descriptionPoints: string[] }>;
+export function getMobileCatalogForVehicle(
+  snapshot: MobileSnapshot,
+  vehicleType: string
+): {
+  services: ServiceItem[];
+  addons: AddonItem[];
 } {
   const block = snapshot.vehicle_blocks.find((b) => b.vehicle_type === vehicleType);
   if (!block) return { services: [], addons: [] };
@@ -186,20 +193,27 @@ export function getMobileCatalogForVehicle(snapshot: MobileSnapshot, vehicleType
   return {
     services: (block.services ?? [])
       .filter((s) => s.active !== false)
-      .map((s) => ({
-        id: s.id,
-        name: s.name,
-        price: Number(s.price ?? 0),
-        recommended: s.recommended === true,
-        descriptionPoints: Array.isArray(s.description_points) ? s.description_points : [],
-      })),
+      .map((s) => mapService(s)),
     addons: addonRows.map((a) => ({
       id: a.id,
       name: a.name,
       price: Number(a.price ?? 0),
-      descriptionPoints: Array.isArray(a.description_points) ? a.description_points : [],
+      descriptionPoints: Array.isArray(a.description_points) ? a.description_points.map(String) : [],
+      active: a.active !== false,
     })),
   };
+}
+
+/** Complimentary coffees from the mobile catalog snapshot for the selected line item. */
+export function getMobileFreeCoffeeCupsForLineItem(
+  snapshot: MobileSnapshot | null,
+  vehicleType: string | null | undefined,
+  serviceId: string | null | undefined
+): number {
+  if (!snapshot || !vehicleType || !serviceId) return 0;
+  const { services } = getMobileCatalogForVehicle(snapshot, vehicleType);
+  const svc = services.find((s) => s.id === serviceId);
+  return Math.max(0, Math.floor(Number(svc?.freeCoffeeCount ?? 0)));
 }
 
 export function listApplicableMobileDiscounts(
@@ -244,18 +258,26 @@ export function listMobilePromoCodes(
     }));
 }
 
-export function listMobileSlots(snapshot: MobileSnapshot): MobileSlotOption[] {
+/**
+ * Offline fallback: 30-minute grid, `bookingDurationMinutes` total block length (snapped to 30).
+ * Prefer {@link listMobileSlotsFromApi} when online.
+ */
+export function listMobileSlots(snapshot: MobileSnapshot, bookingDurationMinutes = 60): MobileSlotOption[] {
   const settings = snapshot.slot_settings;
   if (!settings) return [];
   const open = parseHHMM(settings.open_time);
   let close = parseHHMM(settings.close_time);
   if (close <= open) close += 24 * 60;
-  const duration = Math.max(15, Number(settings.slot_duration_minutes ?? 60));
+  let dur = Math.max(30, Math.round(Number(bookingDurationMinutes) || 60));
+  if (dur % 30) dur += 30 - (dur % 30);
+  dur = Math.min(480, dur);
+  dur = Math.min(dur, Math.max(30, close - open));
+  const step = 30;
   const capacity = Math.max(0, Number(snapshot.service_area.available_drivers ?? 0));
   const out: MobileSlotOption[] = [];
-  for (let t = open; t + duration <= close; t += duration) {
+  for (let t = open; t + dur <= close; t += step) {
     const start = fmtHHMM(t);
-    const end = fmtHHMM(t + duration);
+    const end = fmtHHMM(t + dur);
     const key = `${start}|${end}`;
     const active = settings.slot_window_active_by_key?.[key] !== false;
     out.push({
@@ -270,6 +292,38 @@ export function listMobileSlots(snapshot: MobileSnapshot): MobileSlotOption[] {
   return out;
 }
 
+export async function listMobileSlotsFromApi(
+  pinCode: string,
+  dateISO: string,
+  bookingDurationMinutes?: number,
+  opts?: { signal?: AbortSignal }
+): Promise<MobileSlotOption[]> {
+  const durQ =
+    bookingDurationMinutes != null && Number.isFinite(bookingDurationMinutes)
+      ? `&duration_minutes=${encodeURIComponent(String(Math.round(bookingDurationMinutes)))}`
+      : '';
+  try {
+    const rows = await fetchPublicJson<any[]>(
+      `/public/mobile/slots?pin_code=${encodeURIComponent(pinCode)}&date=${encodeURIComponent(dateISO)}${durQ}`,
+      opts?.signal ? { signal: opts.signal } : undefined
+    );
+    if (!Array.isArray(rows)) return [];
+    return rows.map((s) => ({
+      startTime: String(s.startTime ?? s.start_time ?? ''),
+      endTime: String(s.endTime ?? s.end_time ?? ''),
+      label: String(s.label ?? ''),
+      capacity: Number(s.capacity ?? 0),
+      booked: Number(s.booked ?? 0),
+      available: Number(s.available ?? 0),
+    }));
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    if (e instanceof Error && e.name === 'AbortError') throw e;
+    const snapshot = getCachedMobileSnapshot();
+    return snapshot ? listMobileSlots(snapshot, bookingDurationMinutes) : [];
+  }
+}
+
 export type MobileBookingCreateInput = {
   cityPinCode: string;
   customerName: string;
@@ -281,7 +335,8 @@ export type MobileBookingCreateInput = {
   selectedAddonIds: string[];
   slotDate: string;
   startTime: string;
-  endTime: string;
+  /** Omit so the API derives end time from service duration + add-ons (+30 min each). */
+  endTime?: string;
   notes?: string;
   tipCents?: number;
 };
@@ -305,24 +360,25 @@ export async function createMobileOnlineBooking(
 ): Promise<{ ok: true; booking: MobileBookingRow } | { ok: false }> {
   try {
     const tip = Math.min(50_000, Math.max(0, Math.floor(Number(input.tipCents ?? 0))));
+    const body: Record<string, unknown> = {
+      city_pin_code: input.cityPinCode,
+      customer_name: input.customerName,
+      phone: input.phone,
+      address: input.address,
+      vehicle_summary: input.vehicleSummary,
+      service_id: input.serviceId ?? null,
+      vehicle_type: input.vehicleType,
+      selected_addon_ids: input.selectedAddonIds,
+      slot_date: input.slotDate,
+      start_time: input.startTime,
+      source: 'online',
+      notes: input.notes ?? '',
+      tip_cents: tip,
+    };
+    if (input.endTime) body.end_time = input.endTime;
     const out = await fetchPublicJson<MobileBookingRow>('/public/mobile/bookings', {
       method: 'POST',
-      body: JSON.stringify({
-        city_pin_code: input.cityPinCode,
-        customer_name: input.customerName,
-        phone: input.phone,
-        address: input.address,
-        vehicle_summary: input.vehicleSummary,
-        service_id: input.serviceId ?? null,
-        vehicle_type: input.vehicleType,
-        selected_addon_ids: input.selectedAddonIds,
-        slot_date: input.slotDate,
-        start_time: input.startTime,
-        end_time: input.endTime,
-        source: 'online',
-        notes: input.notes ?? '',
-        tip_cents: tip,
-      }),
+      body: JSON.stringify(body),
     });
     return { ok: true, booking: out };
   } catch {

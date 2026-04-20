@@ -20,6 +20,12 @@ interface Service {
   price: number;
   features: string[];
   recommended?: boolean;
+  /** Branch / mobile catalog complimentary coffees for this line item (0 = none). */
+  freeCoffeeCount?: number;
+  /** Catalog flag: price counts toward loyalty spend window. */
+  eligibleForLoyaltyPoints?: boolean;
+  /** Base service duration (minutes); add-ons add +30 each server-side. */
+  durationMinutes?: number;
 }
 
 interface AddOn {
@@ -61,6 +67,8 @@ interface BookingContextType {
   selectedTime: string | null;
   selectedEndTime: string | null;
   confirmedBooking: ConfirmedBooking | null;
+  reschedulingBookingId: string | null;
+  originalSlot: { date: string; startTime: string; endTime: string } | null;
   setUser: (user: any) => void;
   addVehicle: (vehicle: Vehicle) => void;
   setVehicles: (vehicles: Vehicle[]) => void;
@@ -74,12 +82,14 @@ interface BookingContextType {
   setSelectedTime: (time: string | null) => void;
   setSelectedEndTime: (time: string | null) => void;
   setConfirmedBooking: (booking: ConfirmedBooking | null) => void;
+  setReschedulingBookingId: (id: string | null) => void;
+  setOriginalSlot: (slot: { date: string; startTime: string; endTime: string } | null) => void;
   getTotalPrice: () => number;
   resetBooking: () => void;
 }
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
-const BOOKING_STORAGE_KEY = 'carwash_user_booking_ctx_v1';
+const BOOKING_STORAGE_KEY = 'carwash_user_booking_ctx_v2';
 
 type PersistedBooking = {
   selectedBranch: Branch | null;
@@ -91,6 +101,8 @@ type PersistedBooking = {
   selectedTime: string | null;
   selectedEndTime: string | null;
   confirmedBooking: ConfirmedBooking | null;
+  reschedulingBookingId: string | null;
+  originalSlot: { date: string; startTime: string; endTime: string } | null;
 };
 
 function loadPersistedBooking(): PersistedBooking | null {
@@ -108,6 +120,8 @@ function loadPersistedBooking(): PersistedBooking | null {
       selectedTime: parsed.selectedTime ?? null,
       selectedEndTime: parsed.selectedEndTime ?? null,
       confirmedBooking: parsed.confirmedBooking ?? null,
+      reschedulingBookingId: parsed.reschedulingBookingId ?? null,
+      originalSlot: parsed.originalSlot ?? null,
     };
   } catch {
     return null;
@@ -129,6 +143,8 @@ export function BookingProvider({ children }: { children: ReactNode }) {
   const [selectedTime, setSelectedTime] = useState<string | null>(persisted?.selectedTime ?? null);
   const [selectedEndTime, setSelectedEndTime] = useState<string | null>(persisted?.selectedEndTime ?? null);
   const [confirmedBooking, setConfirmedBooking] = useState<ConfirmedBooking | null>(persisted?.confirmedBooking ?? null);
+  const [reschedulingBookingId, setReschedulingBookingId] = useState<string | null>(persisted?.reschedulingBookingId ?? null);
+  const [originalSlot, setOriginalSlot] = useState<{ date: string; startTime: string; endTime: string } | null>(persisted?.originalSlot ?? null);
 
   const addVehicle = (vehicle: Vehicle) => {
     setVehicles([...vehicles, vehicle]);
@@ -160,6 +176,8 @@ export function BookingProvider({ children }: { children: ReactNode }) {
     setSelectedTime(null);
     setSelectedEndTime(null);
     setConfirmedBooking(null);
+    setReschedulingBookingId(null);
+    setOriginalSlot(null);
   };
 
   useEffect(() => {
@@ -180,6 +198,8 @@ export function BookingProvider({ children }: { children: ReactNode }) {
           selectedTime,
           selectedEndTime,
           confirmedBooking,
+          reschedulingBookingId,
+          originalSlot,
         } as PersistedBooking)
       );
     } catch {
@@ -195,6 +215,8 @@ export function BookingProvider({ children }: { children: ReactNode }) {
     selectedTime,
     selectedEndTime,
     confirmedBooking,
+    reschedulingBookingId,
+    originalSlot,
   ]);
 
   return (
@@ -211,6 +233,8 @@ export function BookingProvider({ children }: { children: ReactNode }) {
         selectedTime,
         selectedEndTime,
         confirmedBooking,
+        reschedulingBookingId,
+        originalSlot,
         setUser,
         addVehicle,
         setVehicles,
@@ -224,6 +248,8 @@ export function BookingProvider({ children }: { children: ReactNode }) {
         setSelectedTime,
         setSelectedEndTime,
         setConfirmedBooking,
+        setReschedulingBookingId,
+        setOriginalSlot,
         getTotalPrice,
         resetBooking,
       }}

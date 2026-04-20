@@ -14,10 +14,16 @@ export interface ServiceItem {
   id: string;
   name: string;
   price: number;
+  /** Optional grouping id when admin uses service-centric variants (same as API `catalog_group_id`). */
+  catalogGroupId?: string | null;
   freeCoffeeCount?: number;
+  /** When true, this service’s price counts toward loyalty spend for this branch/mobile area. */
+  eligibleForLoyaltyPoints?: boolean;
   recommended?: boolean;
   descriptionPoints?: string[];
   active?: boolean;
+  /** Base wash duration in minutes (multiple of 30 from API). */
+  durationMinutes?: number;
 }
 
 export interface AddonItem {

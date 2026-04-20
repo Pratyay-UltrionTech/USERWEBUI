@@ -99,9 +99,35 @@ export function AddOnsPage() {
             <h2 className="text-2xl font-semibold text-gray-900 mb-2">
               Select Add-Ons
             </h2>
-            <p className="text-gray-500">
-              Customize your service with these optional extras
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-gray-500">
+                Customize your service further. You can select multiple add-ons.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const all = ADDONS.map(a => ({ id: a.id, name: a.name, price: a.price }));
+                    setSelectedAddOnIds(ADDONS.map(a => a.id));
+                    setBookingAddOns(all);
+                  }}
+                  className="text-sm font-medium text-[#4F46E5] hover:underline"
+                >
+                  Select All
+                </button>
+                <div className="w-px h-3 bg-gray-300" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedAddOnIds([]);
+                    setBookingAddOns([]);
+                  }}
+                  className="text-sm font-medium text-gray-500 hover:underline"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Add-Ons Grid */}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { MapPin, Plus, Trash2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router';
+import { ArrowLeft, MapPin, Plus, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { clearSignupProfilePending } from '../lib/signupProfileGate';
@@ -27,7 +27,7 @@ export function ProfileSetup() {
 
   useEffect(() => {
     if (!hasCustomerSession) {
-      navigate('/', { replace: true });
+      navigate('/login', { replace: true });
     }
   }, [hasCustomerSession, navigate]);
 
@@ -113,9 +113,18 @@ export function ProfileSetup() {
           className="bg-white rounded-xl shadow-sm p-8"
         >
           <div className="mb-8">
-            <h1 className="text-2xl font-semibold text-gray-900 mb-2">
-              {session?.profileCompleted ? 'Your profile' : 'Complete your profile'}
-            </h1>
+            <div className="flex items-center gap-3 mb-2">
+              <Link
+                to="/home"
+                className="rounded-lg p-2 -ml-2 text-gray-600 transition hover:bg-gray-100 hover:text-[#4F46E5]"
+                aria-label="Back to home"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+              <h1 className="text-2xl font-semibold text-gray-900">
+                {session?.profileCompleted ? 'Your profile' : 'Complete your profile'}
+              </h1>
+            </div>
             <p className="text-gray-500">
               {session?.profileCompleted
                 ? 'Update your details, phone, or vehicles anytime.'

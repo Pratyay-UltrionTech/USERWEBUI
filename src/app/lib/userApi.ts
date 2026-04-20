@@ -125,6 +125,9 @@ export type CustomerServiceHistoryItem = {
   start_time: string;
   end_time: string;
   location_label: string;
+  branch_id?: string;
+  service_id?: string;
+  selected_addon_ids?: string[];
   service_summary: string;
   vehicle_type: string;
   created_at: string | null;
@@ -136,4 +139,16 @@ export type CustomerServiceHistoryResponse = {
 
 export function apiCustomerServiceHistory(token: string): Promise<CustomerServiceHistoryResponse> {
   return getJson<CustomerServiceHistoryResponse>('/customer/service-history', token);
+}
+
+export function apiCustomerRescheduleBooking(
+  token: string,
+  bookingId: string,
+  body: { slot_date: string; start_time: string; end_time: string }
+): Promise<void> {
+  return patchJson<void>(`/customer/bookings/${bookingId}/reschedule`, body, token);
+}
+
+export function apiCustomerCancelBooking(token: string, bookingId: string): Promise<void> {
+  return postJson<void>(`/customer/bookings/${bookingId}/cancel`, {}, token);
 }
